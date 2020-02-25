@@ -1,0 +1,79 @@
+org: yourorg
+app: yourapp
+service: http-api-node
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  environment:
+    DOMAIN_SUFFIX: your-unique-suffix
+  httpApi:
+    authorizers:
+      serviceAuthorizer:
+        identitySource: $request.header.Authorization
+        issuerUrl: 
+          Fn::Join:
+          - ''
+          - - 'https://cognito-idp.'
+            - '${opt:region, self:provider.region}'
+            - '.amazonaws.com/'
+            - Ref: serviceUserPool
+        audience:
+          - Ref: serviceUserPoolClient
+functions:
+  getProfileInfo:
+    handler: profile.get
+    events:
+      - httpApi:
+            method: GET
+            path: /user/profile
+            authorizer: serviceAuthorizer
+  createProfileInfo:
+    handler: profile.post
+    events:
+      - httpApi:
+            method: POST
+            path: /user/profile
+            authorizer: serviceAuthorizer
+
+resources:
+  Resources:
+    HttpApi:
+      DependsOn: serviceUserPool
+    serviceUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: service-user-pool-${opt:stage, self:provider.stage}
+        UsernameAttributes:
+          - email
+        AutoVerifiedAttributes:
+          - email
+    serviceUserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: service-user-pool-client-${opt:stage, self:provider.stage}
+        AllowedOAuthFlows:
+          - implicit
+        AllowedOAuthFlowsUserPoolClient: true
+        AllowedOAuthScopes:
+          - phone
+          - email
+          - openid
+          - profile
+          - aws.cognito.signin.user.admin
+        UserPoolId:
+          Ref: serviceUserPool
+        CallbackURLs: 
+          - https://localhost:3000
+        ExplicitAuthFlows:
+          - ALLOW_USER_SRP_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+        GenerateSecret: false
+        SupportedIdentityProviders: 
+          - COGNITO
+    serviceUserPoolDomain:
+      Type: AWS::Cognito::UserPoolDomain 
+      Properties:
+        UserPoolId: 
+          Ref: serviceUserPool
+        Domain: service-user-pool-domain-${opt:stage, self:provider.stage}-${self:provider.environment.DOMAIN_SUFFIX}
